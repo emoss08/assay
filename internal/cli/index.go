@@ -37,6 +37,20 @@ func newIndexCommand(opts *options) *cobra.Command {
 			"  assay index --jobs 8 --packages ./internal/...\n" +
 			"  assay index --tags integration",
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			// The dirty check runs before the graph loads: loading shells out
+			// to the go command, which recreates a missing go.work.sum or
+			// go.sum as a side effect, and indexing must not refuse over dirt
+			// it caused itself. What matters is the tree the operator handed
+			// us, captured before anything here touches it.
+			root, err := resolveRoot(cmd.Context(), opts.root)
+			if err != nil {
+				return err
+			}
+			dirty, err := vcs.DirtyPaths(cmd.Context(), root)
+			if err != nil {
+				return err
+			}
+
 			session, err := opts.open(cmd.Context())
 			if err != nil {
 				return err
@@ -46,11 +60,6 @@ func newIndexCommand(opts *options) *cobra.Command {
 			}
 
 			commit, err := session.requireIndexCommit(cmd.Context())
-			if err != nil {
-				return err
-			}
-
-			dirty, err := vcs.DirtyPaths(cmd.Context(), session.root)
 			if err != nil {
 				return err
 			}
