@@ -4,10 +4,12 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/mattn/go-isatty"
+	"golang.org/x/term"
 
 	"github.com/emoss08/assay/internal/ui"
 )
@@ -61,13 +63,8 @@ func newProgress(out io.Writer, quiet bool, paint ui.Painter) func(item string, 
 			counts := fmt.Sprintf("%d/%d", done, total)
 			percent := fmt.Sprintf("%3.0f%%", fraction*100)
 
-			fmt.Fprintf(out, "\r\033[2K%s %s %s %s %s",
-				paint.Bar(fraction, progressBarWidth),
-				paint.Bold(percent),
-				counts,
-				paint.Muted(elapsed.String()),
-				paint.Muted(shortenTail(item, 48)),
-			)
+			fmt.Fprint(out, "\r\033[2K"+progressLine(
+				paint, terminalWidth(out), fraction, percent, counts, elapsed.String(), item))
 		}
 	}
 
@@ -97,6 +94,56 @@ func finishProgress(out io.Writer, quiet bool) {
 		return
 	}
 	fmt.Fprint(out, "\r\033[2K")
+}
+
+// progressLine renders the bar, percentage, counts, elapsed time and the item
+// in flight, never letting the visible line reach the terminal's right edge: a
+// wrapped progress line puts the cursor on a new row, \r returns to the start
+// of that row only, and every earlier row's fragment is left behind as
+// garbage. The item gets whatever width remains after the fixed parts and is
+// dropped entirely on tiny terminals.
+func progressLine(
+	paint ui.Painter,
+	width int,
+	fraction float64,
+	percent, counts, elapsed, item string,
+) string {
+	fixed := progressBarWidth + 1 + len(percent) + 1 + len(counts) + 1 + len(elapsed)
+	if fixed > width-1 {
+		minimal := []rune(strings.TrimSpace(percent) + " " + counts)
+		if len(minimal) > width-1 {
+			minimal = minimal[:max(width-1, 0)]
+		}
+
+		return paint.Bold(string(minimal))
+	}
+	line := fmt.Sprintf("%s %s %s %s",
+		paint.Bar(fraction, progressBarWidth),
+		paint.Bold(percent),
+		counts,
+		paint.Muted(elapsed),
+	)
+	if room := width - 1 - fixed - 1; room >= 12 {
+		line += " " + paint.Muted(shortenTail(item, room))
+	}
+
+	return line
+}
+
+// terminalWidth reports the current width of the terminal behind out,
+// re-queried on every call so live resizes are respected. The query is one
+// ioctl — nanoseconds against a 50ms redraw budget.
+func terminalWidth(out io.Writer) int {
+	file, ok := out.(*os.File)
+	if !ok {
+		return 80
+	}
+	width, _, err := term.GetSize(int(file.Fd()))
+	if err != nil || width <= 0 {
+		return 80
+	}
+
+	return width
 }
 
 func isTerminal(out io.Writer) bool {
