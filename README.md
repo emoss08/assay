@@ -35,22 +35,73 @@ See [BENCHMARKS.md](BENCHMARKS.md).
 
 ## Install
 
-**Released binaries.** Every `assay/vX.Y.Z` tag publishes a GitHub release with
-binaries for linux, macOS and windows on amd64 and arm64, with checksums.
-Download, unpack, put `assay` on your PATH:
+**Go install** — one command, any platform:
 
 ```bash
-tar -xzf assay_<version>_linux_amd64.tar.gz
-install assay_<version>_linux_amd64/assay ~/.local/bin/
+go install github.com/emoss08/assay/cmd/assay@latest
 ```
 
-**From source.** assay lives in this monorepo as a self-contained module; it
-builds anywhere Go 1.26 does:
+The binary lands in `go env GOBIN` (default: `$(go env GOPATH)/bin`) under the
+right name for the platform — `assay` on unix, `assay.exe` on windows.
+
+**Released binaries.** Every `vX.Y.Z` tag publishes a
+[GitHub release](https://github.com/emoss08/assay/releases) with binaries for
+linux, macOS and windows on amd64 and arm64, plus a sha256 checksum file.
+
+Linux and macOS — substitute your platform for `linux_amd64`
+(`darwin_arm64` for Apple silicon):
 
 ```bash
-cd tools/assay
-go build -o "$(go env GOPATH)/bin/assay" ./cmd/assay
+v=0.6.0
+curl -fsSLO "https://github.com/emoss08/assay/releases/download/v${v}/assay_${v}_linux_amd64.tar.gz"
+curl -fsSLO "https://github.com/emoss08/assay/releases/download/v${v}/assay_${v}_checksums.txt"
+sha256sum --check --ignore-missing "assay_${v}_checksums.txt"
+tar -xzf "assay_${v}_linux_amd64.tar.gz"
+install "assay_${v}_linux_amd64/assay" ~/.local/bin/
 ```
+
+(`~/.local/bin` must be on your PATH; any directory that is works. On macOS,
+`shasum -a 256 --check` replaces `sha256sum --check`.)
+
+Windows, in PowerShell — the archive ships `assay.exe`, ready to run:
+
+```powershell
+$v = "0.6.0"
+Invoke-WebRequest "https://github.com/emoss08/assay/releases/download/v$v/assay_${v}_windows_amd64.zip" -OutFile "assay_${v}_windows_amd64.zip"
+Expand-Archive "assay_${v}_windows_amd64.zip" -DestinationPath .
+Move-Item "assay_${v}_windows_amd64\assay.exe" "$env:USERPROFILE\go\bin\assay.exe"
+```
+
+(`$env:USERPROFILE\go\bin` is on PATH when Go is installed; any PATH directory
+works.)
+
+**From a checkout.** It builds anywhere Go 1.26 does:
+
+```bash
+git clone https://github.com/emoss08/assay
+cd assay
+go install ./cmd/assay
+```
+
+Prefer `go install` over `go build -o <path>`: a hand-written output path
+without `.exe` produces a file Windows will not execute, so typing `assay`
+opens the file in your editor instead of running the tool.
+
+**Minimal build.** The terminal styling (progress bars, badges, bordered
+tables) renders through [Lip Gloss](https://github.com/charmbracelet/lipgloss).
+It costs nothing measurable at runtime — styles are pure string transforms
+applied at print time, and assay never interrogates the terminal with escape
+round-trips — but if you want the styling engine out of the binary entirely:
+
+```bash
+go install -tags assay_plain ./cmd/assay
+```
+
+The plain build keeps the same colors, bars and alignment with stdlib-only
+ANSI rendering and drops roughly 1.2 MB of binary (measured: 11.6 MB → 10.4 MB,
+startup ~6 ms → ~5 ms). Both builds honor `--no-color`, `NO_COLOR`, and
+disable all decoration when output is not a terminal, so CI logs and piped
+output are always plain text.
 
 A source build reports `assay devel-<commit>` from `assay version`, so a bug
 report always says exactly which code produced it; release binaries report
@@ -58,9 +109,9 @@ their tag.
 
 ### Releasing
 
-Tag the commit as `assay/vX.Y.Z` and push the tag. CI re-runs the test suite,
+Tag the commit as `vX.Y.Z` and push the tag. CI re-runs the test suite,
 cross-compiles every platform with the version stamped in, and publishes the
-release with checksums — see `.github/workflows/assay-release.yml`. There is no
+release with checksums — see `.github/workflows/release.yml`. There is no
 release branch and no manual step: the tag is the release.
 
 ## Use
@@ -167,23 +218,38 @@ attributed to that test's window in single-process mode, where fresh processes
 attributed it to every test. Package-level `init` and `var` initialisers are
 unaffected: their window is merged into every test.
 
-### The index is pinned to a commit
+### The index is pinned to content
 
-An index describes one tree. A diff has two sides, and the index's line numbers
-only mean anything in the coordinates of the tree it was built from — so
-narrowing engages **only when a record's commit equals the selection's base
-commit**, and looks up base-side line numbers. Anything else runs in full.
+An index describes one tree, and its line numbers only mean anything in the
+coordinates of the tree it was built from. Rather than demanding an exact
+commit match, each record is validated **by content**: narrowing engages for a
+package when the selection's base tree has byte-identical digests for that
+package's files, its dependency closure, the module files, and the same
+toolchain — which is exactly the condition under which the record's line
+coordinates are still correct. A record built at one commit keeps serving
+later merge-bases until something it depends on actually changes; a package
+whose content moved falls back to a full run.
 
 In practice:
 
 - **Locally**: `assay index` at a clean `HEAD`, then edit. `assay run` diffs
   against `HEAD`, which is what the index describes, so narrowing engages.
-- **In CI**: index on the base branch and cache it, or index the merge-base
-  commit in the job. `assay select --since "$BASE"` then matches.
+- **In CI**: refresh the index on pushes to the base branch and cache it
+  (`assay index` reuses fingerprint-valid records, so the refresh only
+  re-collects what the push changed). PR jobs restore the cache and
+  `assay select --since "$BASE"` narrows every package whose content still
+  matches the merge-base. See `assay-index.yml` and `assay-select.yml` in
+  [the Trenova repository](https://github.com/emoss08/Trenova/tree/master/.github/workflows)
+  for a working pair running in production.
 
-`assay index` refuses to run on a dirty tree, because the records would claim to
-describe `HEAD` while actually describing something else. `--allow-dirty` builds
-them anyway and marks them unusable for narrowing.
+Build assay with `-buildvcs=false` in CI: cache identity comes from the
+binary's content, so two runs that compile the same assay source trust each
+other's records, while a vcs-stamped build would change identity on every
+commit and reject the entire cache.
+
+`assay index` refuses to run on a dirty tree, because the records would claim
+to describe `HEAD` while actually describing something else. `--allow-dirty`
+builds them anyway and marks them unusable for narrowing.
 
 ### What narrowing refuses to do
 
@@ -207,7 +273,8 @@ And per package:
 
 | Condition | Behaviour |
 |---|---|
-| No index record, or one from a different commit | Run in full |
+| No index record whose content matches the base tree | Run in full |
+| Record built from a dirty tree | Run in full |
 | Record degraded (a coverage path could not be resolved) | Run in full |
 | A test in the record but not attributable — skipped, panicked, no profile | Always selected |
 | Reached by any change with no line attribution | Run in full |

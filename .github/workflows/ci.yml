@@ -1,0 +1,69 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: "1.26"
+          cache: true
+
+      - name: gofmt
+        run: |
+          unformatted="$(gofmt -l .)"
+          if [ -n "$unformatted" ]; then
+            echo "gofmt needed on:"
+            echo "$unformatted"
+            exit 1
+          fi
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: Build
+        run: go build ./...
+
+      # The mutation and index suites compile test binaries and spawn nested
+      # processes; they are the product under test, not incidental slowness.
+      - name: Test
+        run: go test -count=1 ./...
+
+      - name: Race (concurrency-heavy packages)
+        run: go test -count=1 -race ./internal/mutate/ ./internal/index/ ./internal/watch/ ./internal/flake/
+
+      # The assay_plain tag swaps the styling engine for a stdlib-only one;
+      # both variants must always build and agree on the ui contract.
+      - name: Plain-build variant
+        run: |
+          go build -tags assay_plain ./...
+          go test -count=1 -tags assay_plain ./internal/ui/ ./internal/cli/ ./internal/report/
+
+      - name: Cross-compile
+        run: |
+          GOOS=windows go build ./...
+          GOOS=windows go build -tags assay_plain ./...
+          GOOS=darwin go build ./...
