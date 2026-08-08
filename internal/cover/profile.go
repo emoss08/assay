@@ -43,7 +43,7 @@ func ParseProfile(reader io.Reader) ([]FileBlocks, error) {
 		if len(blocks) == 0 {
 			continue
 		}
-		out = append(out, FileBlocks{ProfileName: profile.FileName, Blocks: mergeBlocks(blocks)})
+		out = append(out, FileBlocks{ProfileName: profile.FileName, Blocks: MergeBlocks(blocks)})
 	}
 
 	sort.Slice(out, func(i, j int) bool { return out[i].ProfileName < out[j].ProfileName })
@@ -51,7 +51,12 @@ func ParseProfile(reader io.Reader) ([]FileBlocks, error) {
 	return out, nil
 }
 
-func mergeBlocks(blocks []Block) []Block {
+// MergeBlocks sorts blocks and coalesces overlapping or line-adjacent ones,
+// the same normalisation ParseProfile applies to text profiles. Callers that
+// assemble blocks from another source (the binary covdata decoder) use it so
+// both paths emit identical shapes. The input must be non-empty; it is
+// modified in place.
+func MergeBlocks(blocks []Block) []Block {
 	sort.Slice(blocks, func(i, j int) bool {
 		if blocks[i].StartLine != blocks[j].StartLine {
 			return blocks[i].StartLine < blocks[j].StartLine

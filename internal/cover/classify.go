@@ -315,7 +315,7 @@ func mergeBlocksOrEmpty(blocks []Block) []Block {
 		return nil
 	}
 
-	return mergeBlocks(blocks)
+	return MergeBlocks(blocks)
 }
 
 func splitLines(source []byte) []string {
