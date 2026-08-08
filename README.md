@@ -1,9 +1,24 @@
 # assay
 
-Test intelligence for Go. Runs the tests a change can actually affect, instead of
-all of them.
+[![Go Reference](https://pkg.go.dev/badge/github.com/emoss08/assay.svg)](https://pkg.go.dev/github.com/emoss08/assay)
+[![Release](https://img.shields.io/github/v/release/emoss08/assay)](https://github.com/emoss08/assay/releases/latest)
+[![CI](https://github.com/emoss08/assay/actions/workflows/ci.yml/badge.svg)](https://github.com/emoss08/assay/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Go Report Card](https://goreportcard.com/badge/github.com/emoss08/assay)](https://goreportcard.com/report/github.com/emoss08/assay)
 
-## Status
+**Test intelligence for Go** — test impact analysis, line-level test selection,
+mutation testing, flaky-test detection, and coverage risk mapping in one static
+binary. Run the tests a change can actually affect, instead of all of them.
+
+> An **assay** is the analysis of a substance to determine its composition and
+> quality — how a metallurgist proves what ore is actually made of, as opposed
+> to what it looks like. That is what this tool does to a test suite: it
+> measures which tests genuinely exercise which lines, which failures are
+> real signal versus flake noise, and which passing tests would actually
+> object if the code went wrong. Not how much of the codebase is covered —
+> how much of it is *proven*.
+
+## What it does
 
 Two layers, both live:
 
