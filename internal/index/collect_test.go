@@ -222,6 +222,43 @@ func TestFingerprintDiffersPerPackage(t *testing.T) {
 	assert.Equal(t, calc, fp.For(testfixture.Module+"/calc"), "fingerprints must be stable")
 }
 
+func TestFingerprintTracksWorkspaceRoot(t *testing.T) {
+	h := setup(t)
+	other := setup(t)
+
+	require.NotEqual(t, h.root, other.root)
+
+	same := index.NewFingerprinter(h.graph, h.digests, nil).For(testfixture.Module + "/calc")
+	moved := index.NewFingerprinter(other.graph, other.digests, nil).For(testfixture.Module + "/calc")
+
+	assert.NotEqual(t, same, moved,
+		"records store absolute paths, so an identical tree at another root must not share records")
+}
+
+// TestFingerprintScopesTestdataModuleFilesToTheirPackage pins the ownership
+// rule for fixture module files: a go.mod under a package's testdata belongs
+// to that package. Classified as unowned it was hashed into every package's
+// fingerprint, and editing one fixture invalidated the entire index.
+func TestFingerprintScopesTestdataModuleFilesToTheirPackage(t *testing.T) {
+	h := setup(t)
+
+	before := index.NewFingerprinter(h.graph, h.digests, nil)
+	calcBefore := before.For(testfixture.Module + "/calc")
+	repoBefore := before.For(testfixture.Module + "/repo")
+
+	digests := make(map[string]string, len(h.digests)+1)
+	for path, digest := range h.digests {
+		digests[path] = digest
+	}
+	digests["calc/testdata/proj/go.mod"] = "0000000000000000000000000000000000000001"
+
+	after := index.NewFingerprinter(h.graph, digests, nil)
+	assert.NotEqual(t, calcBefore, after.For(testfixture.Module+"/calc"),
+		"the fixture belongs to calc and must invalidate it")
+	assert.Equal(t, repoBefore, after.For(testfixture.Module+"/repo"),
+		"a calc fixture must not invalidate unrelated packages")
+}
+
 func TestFingerprintTracksDependencies(t *testing.T) {
 	h := setup(t)
 	before := index.NewFingerprinter(h.graph, h.digests, nil).For(testfixture.Module + "/svc")
