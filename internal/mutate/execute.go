@@ -143,8 +143,13 @@ func Execute(ctx context.Context, mutants []Mutant, opts ExecuteOptions) ([]Resu
 	}
 
 	ready, declined := prepareBatches(batches)
+	// Cleanup iterates its own copy: `ready` is nil-ed below once the harness
+	// has judged the batches, and a defer over the live variable then swept
+	// nothing, leaking one workdir — overlays plus every compiled test binary —
+	// per batch of every run.
+	prepared := ready
 	defer func() {
-		for _, batch := range ready {
+		for _, batch := range prepared {
 			batch.cleanup()
 		}
 	}()

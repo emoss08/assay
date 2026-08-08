@@ -312,6 +312,13 @@ func requireNoBuildFailures(t *testing.T, results []mutate.Result) {
 }
 
 func TestStrongSuiteKillsEveryMutant(t *testing.T) {
+	// The run doubles as the leak check for schemata workdirs: pointing TMPDIR
+	// at a fresh directory makes any assay-schemata-* directory that survives
+	// Execute visible. The harness path used to nil the batch list before the
+	// deferred cleanup ran, leaking overlays and compiled test binaries.
+	tmp := t.TempDir()
+	t.Setenv("TMPDIR", tmp)
+
 	c := newCorpus(t)
 
 	results, score := c.run(t, "strong")
@@ -320,6 +327,13 @@ func TestStrongSuiteKillsEveryMutant(t *testing.T) {
 	assert.Zero(t, score.Survived, "a fully asserted suite should leave no survivors")
 	assert.Positive(t, score.Killed)
 	assert.InDelta(t, 100.0, score.MSI(), 0.001)
+
+	entries, err := os.ReadDir(tmp)
+	require.NoError(t, err)
+	for _, entry := range entries {
+		assert.NotContains(t, entry.Name(), "assay-schemata-",
+			"Execute must remove every schemata workdir it prepared")
+	}
 }
 
 func TestEquivalentMutantSurvivesAThoroughSuite(t *testing.T) {

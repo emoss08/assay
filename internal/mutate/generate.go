@@ -109,8 +109,8 @@ func Generate(ctx context.Context, opts GenerateOptions) ([]Mutant, error) {
 	}
 
 	var out []Mutant
-	for i, file := range pkg.Syntax {
-		path := syntaxPath(pkg, i)
+	for _, file := range pkg.Syntax {
+		path := syntaxPath(pkg, file)
 		if path == "" || strings.HasSuffix(path, "_test.go") {
 			continue
 		}
@@ -149,15 +149,19 @@ func parseWithComments(fset *token.FileSet, filename string, src []byte) (*ast.F
 	return parser.ParseFile(fset, filename, src, parser.ParseComments|parser.AllErrors)
 }
 
-func syntaxPath(pkg *packages.Package, i int) string {
-	if i < len(pkg.CompiledGoFiles) && !strings.Contains(pkg.CompiledGoFiles[i], "go-build") {
-		return pkg.CompiledGoFiles[i]
-	}
-	if i < len(pkg.GoFiles) {
-		return pkg.GoFiles[i]
+// syntaxPath returns the on-disk source behind one parsed file, read from the
+// tree's own position information rather than by indexing a parallel file
+// list — GoFiles and Syntax disagree in length and order for any cgo package,
+// and a positional fallback spliced mutations into whatever file happened to
+// sit at that index. A cgo-generated file lives in the build cache and
+// describes text that exists nowhere in the tree, so it yields no mutants.
+func syntaxPath(pkg *packages.Package, file *ast.File) string {
+	path := pkg.Fset.Position(file.FileStart).Filename
+	if path == "" || strings.Contains(path, "go-build") {
+		return ""
 	}
 
-	return ""
+	return path
 }
 
 func mutantsInFile(
