@@ -1,6 +1,7 @@
 package flake
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"sync"
@@ -173,6 +174,33 @@ func TestCompactionKeepsTheNewestObservations(t *testing.T) {
 	assert.Equal(t, maxPerTest, busy, "compaction bounds each test's history")
 	assert.Equal(t, 1, quiet, "compaction must not evict other tests' evidence")
 	assert.Equal(t, int64(50), minBusy, "the newest observations are the ones kept")
+}
+
+// TestCompactionKeepsTheNewestAppendsOnTimestampTies pins the tie order: a
+// preflight stamps one clock reading across a whole batch, so a group over the
+// cap can be all-ties — and compaction must keep the latest appends, not the
+// order the file happened to serve them in.
+func TestCompactionKeepsTheNewestAppendsOnTimestampTies(t *testing.T) {
+	j, err := OpenJournal(t.TempDir(), "/root")
+	require.NoError(t, err)
+
+	var all []Observation
+	for i := range maxPerTest + 10 {
+		o := obs("p", "TestTied", "fp", VerdictPass, 7)
+		o.Detail = fmt.Sprintf("append-%03d", i)
+		all = append(all, o)
+	}
+	require.NoError(t, j.Record(all))
+
+	require.NoError(t, j.compactLocked())
+
+	got, err := j.Load()
+	require.NoError(t, err)
+	require.Len(t, got, maxPerTest)
+	for _, o := range got {
+		assert.NotEqual(t, "append-000", o.Detail,
+			"the oldest appends are the ones compaction must discard")
+	}
 }
 
 func TestParseVerboseOutputTakesTopLevelVerdictsOnly(t *testing.T) {
