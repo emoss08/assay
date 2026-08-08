@@ -31,7 +31,7 @@ func newVerifyCommand(opts *options) *cobra.Command {
 				return err
 			}
 
-			printer := report.NewPrinter(cmd.ErrOrStderr(), opts.useColor())
+			printer := report.NewPrinter(cmd.ErrOrStderr(), opts.useColorErr())
 			if err := printer.Summary(summary, opts.verbose); err != nil {
 				return err
 			}

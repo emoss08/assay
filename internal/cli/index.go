@@ -96,7 +96,7 @@ func newIndexCommand(opts *options) *cobra.Command {
 				Jobs:        jobs,
 				Timeout:     timeout,
 				Packages:    targets,
-				Progress:    newProgress(cmd.ErrOrStderr(), quiet, opts.painter()),
+				Progress:    newProgress(cmd.ErrOrStderr(), quiet, opts.errPainter()),
 				Legacy:      legacy,
 			})
 			if err != nil {
@@ -108,7 +108,8 @@ func newIndexCommand(opts *options) *cobra.Command {
 		},
 	}
 
-	cmd.Flags().IntVar(&jobs, "jobs", 0, "packages to index concurrently (default: GOMAXPROCS)")
+	cmd.Flags().IntVar(&jobs, "jobs", 0,
+		"packages to index concurrently (default: half of GOMAXPROCS; each worker builds with its share of the cores)")
 	cmd.Flags().DurationVar(&timeout, "timeout", 0, "per-test timeout (default: 60s)")
 	cmd.Flags().StringSliceVar(&packages, "packages", nil, "limit indexing to these import paths")
 	cmd.Flags().BoolVar(&quiet, "quiet", false, "suppress progress output")

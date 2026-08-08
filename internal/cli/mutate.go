@@ -146,7 +146,7 @@ func runMutate(cmd *cobra.Command, opts *options, flags *mutateFlags) error {
 		mutants = mutate.Exclude(mutants, preflight.Failing)
 	}
 
-	execOpts.Progress = newProgress(cmd.ErrOrStderr(), flags.quiet, opts.painter())
+	execOpts.Progress = newProgress(cmd.ErrOrStderr(), flags.quiet, opts.errPainter())
 
 	results, err := mutate.Execute(ctx, mutants, execOpts)
 	if err != nil {

@@ -72,12 +72,28 @@ type options struct {
 	noColor  bool
 }
 
+func (o *options) colorEnabled() bool {
+	return !o.noColor && os.Getenv("NO_COLOR") == ""
+}
+
+// useColor answers for stdout-bound output and useColorErr for stderr-bound:
+// the two can disagree under redirection — `assay run 2>log` must not write
+// escapes into the log because stdout is still a terminal, and `assay run
+// >results` must not strip color from a summary still heading to one.
 func (o *options) useColor() bool {
-	return !o.noColor && os.Getenv("NO_COLOR") == "" && isTerminal(os.Stdout)
+	return o.colorEnabled() && isTerminal(os.Stdout)
+}
+
+func (o *options) useColorErr() bool {
+	return o.colorEnabled() && isTerminal(os.Stderr)
 }
 
 func (o *options) painter() ui.Painter {
 	return ui.New(o.useColor())
+}
+
+func (o *options) errPainter() ui.Painter {
+	return ui.New(o.useColorErr())
 }
 
 func NewRootCommand() *cobra.Command {
