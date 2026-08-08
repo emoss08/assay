@@ -163,6 +163,29 @@ func TestEditInsideOneTestRunsOnlyThatTest(t *testing.T) {
 	assert.NotEmpty(t, cycle.Runs[0].Pattern)
 }
 
+// TestEditInsideTestMainRunsThePackageInFull pins the refinement against the
+// one Test-prefixed function -test.run can never select: narrowing to
+// ^(TestMain)$ runs zero tests and prints a green cycle for an edit to the
+// code that sets up all of them.
+func TestEditInsideTestMainRunsThePackageInFull(t *testing.T) {
+	r := newRepo(t)
+	withMain := "package alpha\n\nimport (\n\t\"os\"\n\t\"testing\"\n)\n\n" +
+		"func TestMain(m *testing.M) {\n\tcode := m.Run()\n\tos.Exit(code)\n}\n\n" +
+		"func TestDouble(t *testing.T) {\n\tif Double(2) != 4 {\n\t\tt.Fatal(\"bad\")\n\t}\n}\n"
+	r.write("alpha/alpha_test.go", withMain)
+	r.git("add", ".")
+	r.git("commit", "-qm", "alpha gains a TestMain")
+
+	r.write("alpha/alpha_test.go", strings.Replace(withMain, "code := m.Run()", "code := m.Run() + 0", 1))
+
+	cycle, err := planner(r).Plan(t.Context(), []string{r.path("alpha/alpha_test.go")})
+	require.NoError(t, err)
+
+	require.Len(t, cycle.Runs, 1)
+	assert.Empty(t, cycle.Runs[0].Tests, "an edit to TestMain must run the whole package")
+	assert.Empty(t, cycle.Runs[0].Pattern)
+}
+
 // TestEditOutsideTestBodiesRunsThePackageInFull pins the refinement's guard: a
 // change to a helper or import can affect any test in the package, so the
 // refinement must decline rather than guess.
@@ -233,6 +256,34 @@ func TestBinaryCacheReusesUntilTheClosureChanges(t *testing.T) {
 	_, reused, err = c.Ensure(t.Context(), req)
 	require.NoError(t, err)
 	assert.False(t, reused, "a changed dependency closure must rebuild")
+}
+
+// TestBinaryCacheIgnoresStaleStagingLeftovers pins the promotion invariant: a
+// truncated .tmp from a killed build must never be renamed into place as if a
+// later build produced it. The trap needs a package whose successful build
+// emits no binary — one with no test files — so the only thing at the staging
+// path is the leftover.
+func TestBinaryCacheIgnoresStaleStagingLeftovers(t *testing.T) {
+	r := newRepo(t)
+	r.write("quiet/quiet.go", "package quiet\n\nfunc Noop() {}\n")
+
+	c, err := NewBinaryCache()
+	require.NoError(t, err)
+	t.Cleanup(c.Close)
+
+	stale := filepath.Join(c.dir, binaryName(watchModule+"/quiet")+".tmp")
+	require.NoError(t, os.WriteFile(stale, []byte("truncated garbage"), 0o755))
+
+	path, reused, err := c.Ensure(t.Context(), BuildRequest{
+		Root:        r.root,
+		Env:         append(os.Environ(), "GOWORK=off"),
+		ImportPath:  watchModule + "/quiet",
+		Fingerprint: cache.Fingerprint{1},
+	})
+	require.NoError(t, err)
+	assert.False(t, reused)
+	assert.Empty(t, path, "a package with no test files has no binary, stale leftovers included")
+	assert.NoFileExists(t, filepath.Join(c.dir, binaryName(watchModule+"/quiet")))
 }
 
 func TestWatcherBatchesDebouncedSaves(t *testing.T) {
