@@ -25,10 +25,16 @@ func NewFingerprinter(g *graph.Graph, treeDigests map[string]string, tags []stri
 	sorted := append([]string(nil), tags...)
 	sort.Strings(sorted)
 
+	// The workspace root is part of the fingerprint because records intern
+	// absolute paths: a record built at /a/repo answers Knows() with /a/repo
+	// paths only. Without the root, a second checkout sharing the cache
+	// directory gets byte-identical fingerprints, hits records whose every
+	// path misses, and silently narrows to nothing.
 	f := &Fingerprinter{
-		graph:     g,
-		byPkg:     make(map[string][]string),
-		toolchain: cache.BuildIdentity() + "|" + runtime.Version() + "|" + strings.Join(sorted, ","),
+		graph: g,
+		byPkg: make(map[string][]string),
+		toolchain: cache.BuildIdentity() + "|" + runtime.Version() + "|" +
+			g.Root + "|" + strings.Join(sorted, ","),
 	}
 
 	paths := make([]string, 0, len(treeDigests))
@@ -44,7 +50,11 @@ func NewFingerprinter(g *graph.Graph, treeDigests map[string]string, tags []stri
 		entry := path + " " + treeDigests[path]
 		abs := filepath.Join(g.Root, filepath.FromSlash(path))
 
-		if isModuleFile(path) {
+		// A module file under testdata is a fixture the build never reads; it
+		// attributes to its owning package below like any other fixture file.
+		// Classified as unowned it was hashed into every package's
+		// fingerprint, so editing one fixture invalidated the whole index.
+		if isModuleFile(path) && !underTestdataPath(path) {
 			f.unowned = append(f.unowned, entry)
 
 			continue
@@ -64,6 +74,12 @@ func NewFingerprinter(g *graph.Graph, treeDigests map[string]string, tags []stri
 func isRelevantPath(path string) bool {
 	return strings.HasSuffix(path, ".go") || isModuleFile(path) ||
 		strings.Contains(path, "/testdata/")
+}
+
+// underTestdataPath reports whether a slash-relative tree path has a testdata
+// element, which the Go build system never looks inside.
+func underTestdataPath(path string) bool {
+	return strings.HasPrefix(path, "testdata/") || strings.Contains(path, "/testdata/")
 }
 
 func isModuleFile(path string) bool {

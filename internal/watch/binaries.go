@@ -77,6 +77,15 @@ func (c *BinaryCache) Ensure(ctx context.Context, req BuildRequest) (string, boo
 
 	output := filepath.Join(c.dir, binaryName(req.ImportPath))
 	staging := output + ".tmp"
+	// A build killed mid-write leaves a truncated staging file behind. The next
+	// build usually overwrites it, but a package that has since lost its test
+	// files produces no output at all — and the no-output check below would
+	// then find the stale leftover and promote it as fresh. Clear the slate
+	// before building so whatever sits at the staging path afterwards was put
+	// there by this build.
+	if err := os.Remove(staging); err != nil && !os.IsNotExist(err) {
+		return "", false, fmt.Errorf("clear stale staging binary for %s: %w", req.ImportPath, err)
+	}
 
 	args := []string{"test", "-c", "-o", staging}
 	if req.BuildParallelism > 0 {

@@ -79,6 +79,21 @@ func TestChurnCountsProductionGoFilesOnly(t *testing.T) {
 	assert.NotContains(t, churn, "README.md")
 }
 
+// TestChurnKeysPathsRelativeToTheGivenRoot pins the contract the risk report
+// depends on: git prints numstat paths relative to the repository toplevel,
+// but callers analyzing a subdirectory key their lookups by root-relative
+// paths. A mismatch made every lookup miss and reported all churn as zero.
+func TestChurnKeysPathsRelativeToTheGivenRoot(t *testing.T) {
+	root := churnRepo(t)
+
+	churn, err := vcs.Churn(t.Context(), filepath.Join(root, "pkg"), 30*24*time.Hour)
+	require.NoError(t, err)
+
+	assert.Equal(t, 3, churn["hot.go"].Commits,
+		"paths must be relative to the analysis root, not the repo toplevel")
+	assert.NotContains(t, churn, "pkg/hot.go")
+}
+
 // TestChurnHonoursTheWindow pins the time bound: commits older than the window
 // contribute nothing, and an empty history is a result, not an error.
 func TestChurnHonoursTheWindow(t *testing.T) {

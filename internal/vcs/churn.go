@@ -3,6 +3,7 @@ package vcs
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -20,15 +21,24 @@ type ChurnStat struct {
 const churnMarker = "\x01"
 
 // Churn reports per-file change activity over the trailing window, keyed by
-// slash-separated path relative to the repository root. Only production Go
-// files count: churn in tests is not production exposure, and churn in
-// non-Go files is not this tool's business.
+// slash-separated path relative to root. Only production Go files count:
+// churn in tests is not production exposure, and churn in non-Go files is not
+// this tool's business.
 func Churn(ctx context.Context, root string, window time.Duration) (map[string]ChurnStat, error) {
 	since := fmt.Sprintf("--since=%d.seconds.ago", int64(window.Seconds()))
 	out, err := runGit(ctx, root,
 		"log", since, "--numstat", "--no-renames", "--format="+churnMarker+"%at", "--", ".")
 	if err != nil {
 		return nil, fmt.Errorf("read churn: %w", err)
+	}
+
+	// git prints numstat paths relative to the repository toplevel no matter
+	// where it runs, while callers key lookups by root-relative paths. When
+	// root is a subdirectory of the repo the two disagree for every file, so
+	// every lookup missed and risk called everything stable.
+	prefix, err := gitPathPrefix(ctx, root)
+	if err != nil {
+		return nil, err
 	}
 
 	churn := make(map[string]ChurnStat)
@@ -52,6 +62,10 @@ func Churn(ctx context.Context, root string, window time.Duration) (map[string]C
 		if !ok || !isProductionGoFile(path) {
 			continue
 		}
+		path, inRoot := strings.CutPrefix(path, prefix)
+		if !inRoot {
+			continue
+		}
 
 		stat := churn[path]
 		if _, counted := seenThisCommit[path]; !counted {
@@ -66,6 +80,28 @@ func Churn(ctx context.Context, root string, window time.Duration) (map[string]C
 	}
 
 	return churn, nil
+}
+
+// gitPathPrefix returns root's toplevel-relative prefix, slash-separated and
+// "/"-terminated, or "" when root is the repository toplevel itself. Symlinks
+// are resolved before comparing because rev-parse resolves them too.
+func gitPathPrefix(ctx context.Context, root string) (string, error) {
+	toplevel, err := RepoRoot(ctx, root)
+	if err != nil {
+		return "", err
+	}
+
+	resolved := root
+	if r, symErr := filepath.EvalSymlinks(root); symErr == nil {
+		resolved = r
+	}
+
+	rel, err := filepath.Rel(toplevel, resolved)
+	if err != nil || rel == "." || strings.HasPrefix(rel, "..") {
+		return "", nil
+	}
+
+	return filepath.ToSlash(rel) + "/", nil
 }
 
 // parseNumstat reads one "added<TAB>deleted<TAB>path" line. Binary files

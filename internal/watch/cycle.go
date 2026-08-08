@@ -262,6 +262,12 @@ func (p *Planner) refineTestEdit(
 }
 
 func runnableByTestRun(name string) bool {
+	// TestMain passes the prefix check but is the harness entry point, not a
+	// test: -test.run never selects it, so narrowing to it runs zero tests and
+	// prints a green cycle for an edit to the code that sets up all of them.
+	if name == "TestMain" {
+		return false
+	}
 	for _, prefix := range [...]string{"Test", "Fuzz"} {
 		if rest, ok := strings.CutPrefix(name, prefix); ok {
 			if rest == "" || rest[0] < 'a' || rest[0] > 'z' {

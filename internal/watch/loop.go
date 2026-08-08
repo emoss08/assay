@@ -229,6 +229,14 @@ func cycleObservations(results []RunResult) []flake.Observation {
 			failedSet[name] = struct{}{}
 			observe(name, flake.VerdictFail)
 		}
+		// result.Tests is the requested list, not the executed one. A run that
+		// died mid-list — a panic, a -test.timeout dump, an os.Exit — never
+		// reached the remaining tests, and crediting them passes would
+		// fabricate the exact conflicting evidence the journal exists to
+		// detect. Only a run that printed its FAIL trailer ran the whole list.
+		if !printedFailTrailer(result.Output) {
+			continue
+		}
 		for _, name := range result.Tests {
 			if _, isFailed := failedSet[name]; !isFailed {
 				observe(name, flake.VerdictPass)
@@ -583,6 +591,24 @@ func printFailure(out io.Writer, output []byte) {
 	for line := range strings.SplitSeq(text, "\n") {
 		fmt.Fprintf(out, "    %s\n", line)
 	}
+}
+
+// printedFailTrailer reports whether a failing test binary ran to completion:
+// testing.M prints a bare FAIL as its final line only after the whole test
+// list executed, while a crashed run ends in a stack trace or whatever the
+// dying process last wrote.
+func printedFailTrailer(output []byte) bool {
+	lines := strings.Split(string(output), "\n")
+	for i := len(lines) - 1; i >= 0; i-- {
+		line := strings.TrimSpace(lines[i])
+		if line == "" {
+			continue
+		}
+
+		return line == "FAIL"
+	}
+
+	return false
 }
 
 func failedTestNames(output []byte) []string {

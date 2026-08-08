@@ -21,7 +21,17 @@ func TestCycleObservationsAttributeEveryKnownVerdict(t *testing.T) {
 			ImportPath:  "example.com/m/red",
 			Tests:       []string{"TestBroken", "TestFine"},
 			Passed:      false,
-			Output:      []byte("--- FAIL: TestBroken (0.00s)\n"),
+			Output:      []byte("--- FAIL: TestBroken (0.00s)\nFAIL\n"),
+			Fingerprint: fp,
+		},
+		{
+			// A crashed run: the panic aborted the binary before TestNever ran,
+			// so no FAIL trailer was printed and no pass may be credited to it.
+			ImportPath: "example.com/m/crashed",
+			Tests:      []string{"TestPanics", "TestNever"},
+			Passed:     false,
+			Output: []byte("--- FAIL: TestPanics (0.00s)\npanic: boom\n\n" +
+				"goroutine 1 [running]:\nmain.main()\n"),
 			Fingerprint: fp,
 		},
 		{
@@ -44,11 +54,14 @@ func TestCycleObservationsAttributeEveryKnownVerdict(t *testing.T) {
 		assert.Equal(t, "watch", o.Source)
 	}
 
-	require.Len(t, observations, 3)
+	require.Len(t, observations, 4)
 	assert.Equal(t, flake.VerdictFail, byKey["example.com/m/red.TestBroken"])
 	assert.Equal(t, flake.VerdictPass, byKey["example.com/m/red.TestFine"],
 		"a test that ran beside the failure and did not fail is a pass worth recording")
 	assert.Equal(t, flake.VerdictPass, byKey["example.com/m/green.TestOK"])
+	assert.Equal(t, flake.VerdictFail, byKey["example.com/m/crashed.TestPanics"])
+	assert.NotContains(t, byKey, "example.com/m/crashed.TestNever",
+		"a test the crash prevented from running was not observed and must not be journalled")
 }
 
 // TestStickyRerunsProduceFlakeEvidence pins the payoff of recording watch
@@ -60,7 +73,7 @@ func TestStickyRerunsProduceFlakeEvidence(t *testing.T) {
 		ImportPath:  "example.com/m/p",
 		Tests:       []string{"TestJumpy"},
 		Passed:      false,
-		Output:      []byte("--- FAIL: TestJumpy (0.00s)\n"),
+		Output:      []byte("--- FAIL: TestJumpy (0.00s)\nFAIL\n"),
 		Fingerprint: fp,
 	}})
 	rerunCycle := cycleObservations([]RunResult{{

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 
 	"github.com/zeebo/blake3"
@@ -162,6 +163,11 @@ func (j *Journal) compactLocked() error {
 
 	kept := make([]Observation, 0, len(observations))
 	for _, group := range grouped {
+		// The group arrives in append order, oldest first, and observations
+		// batched in one write share a timestamp. Reversing before the stable
+		// sort makes the newest appends win ties; without it a group trimmed
+		// at the cap kept its stalest evidence and discarded its newest.
+		slices.Reverse(group)
 		sort.SliceStable(group, func(i, j int) bool { return group[i].Unix > group[j].Unix })
 		if len(group) > maxPerTest {
 			group = group[:maxPerTest]

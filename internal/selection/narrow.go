@@ -3,6 +3,7 @@ package selection
 import (
 	"path/filepath"
 	"sort"
+	"strings"
 
 	"github.com/emoss08/assay/internal/cover"
 	"github.com/emoss08/assay/internal/graph"
@@ -157,6 +158,16 @@ func partitionChanges(changes []vcs.Change) ([]fileChange, []string) {
 			continue
 		}
 		if len(classification.Executable) == 0 {
+			continue
+		}
+		// A test file is executable and narrowable by classification, but it can
+		// never be attributed: coverage instruments only production code, so no
+		// index record knows a _test.go path, and treating the change as
+		// attributable would silently select nothing — the edited test itself
+		// would not run. The package runs in full instead.
+		if strings.HasSuffix(filepath.Base(change.Path), "_test.go") {
+			blocking = append(blocking, change.Path)
+
 			continue
 		}
 

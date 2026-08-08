@@ -3,6 +3,7 @@ package selection
 import (
 	"path/filepath"
 	"sort"
+	"strings"
 
 	"github.com/emoss08/assay/internal/graph"
 	"github.com/emoss08/assay/internal/vcs"
@@ -45,7 +46,11 @@ func Select(opts Options) Result {
 
 	for _, change := range opts.Changes {
 		base := filepath.Base(change.Path)
-		if _, isTrigger := globalTriggerFiles[base]; isTrigger {
+		// A go.mod under a testdata directory is a fixture, not a module
+		// boundary — the build ignores testdata entirely — so it attributes to
+		// its owning package like any other fixture file instead of forcing a
+		// whole-workspace run.
+		if _, isTrigger := globalTriggerFiles[base]; isTrigger && !underTestdata(change.Path) {
 			return All(g, "module definition changed: "+base)
 		}
 
@@ -88,6 +93,18 @@ func Select(opts Options) Result {
 		ChangedPackages: seeds,
 		Unattributed:    unattributed,
 	}
+}
+
+// underTestdata reports whether any element of the path is a testdata
+// directory, which the Go build system never looks inside.
+func underTestdata(path string) bool {
+	for _, segment := range strings.Split(filepath.ToSlash(path), "/") {
+		if segment == "testdata" {
+			return true
+		}
+	}
+
+	return false
 }
 
 func All(g *graph.Graph, reason string) Result {

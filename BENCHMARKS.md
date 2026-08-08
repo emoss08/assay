@@ -320,11 +320,30 @@ the win scales with init cost times test count.
 Durations also become honest in this mode: they are measured inside the harness
 around `m.Run`, not around a process that spends most of its life initialising.
 
-The follow-up that would turn the wash into a win everywhere is parsing the
-binary covcounters format directly instead of shelling out to covdata per
-window. It is deliberately not attempted here: the format is internal to the Go
-toolchain and version-sensitive, and a maintenance trap should be walked into
-deliberately or not at all.
+The follow-up that turns the wash into a win everywhere is parsing the binary
+covmeta/covcounters formats directly instead of shelling out to covdata per
+window — and it is now built, with the maintenance trap fenced rather than
+walked into blind. Both formats are version-stamped and unchanged since Go
+1.20; the decoder refuses anything it does not recognise — future version,
+foreign magic, meta-hash mismatch, truncation — and any refusal falls back to
+the covdata subprocess path wholesale, so an incompatible future toolchain
+costs time, never correctness. A parity test drives the real toolchain end to
+end and requires the decoded blocks to equal the textfmt path's exactly.
+
+What the subprocess path paid per window was one spawn plus a re-read of the
+package's whole-closure meta plus a text profile dominated by zero-count
+lines the parser then discarded — a cost that scales with tests × closure
+size, which is exactly the product that buries large workspaces. Measured on a
+synthetic workspace of 90 packages where each of 30 test packages closes over
+61 instrumented packages (600 tests, warm build caches, 4 cores):
+
+| Path | Wall | user+sys CPU |
+|---|---|---|
+| covdata subprocess per window | 13.1s | 41.3s |
+| in-process decoding | **8.5s** | **25.7s** |
+
+At a 201-package closure the same shape gives 8.7s against 5.7s. The remaining
+time is compile, link and test execution; the per-test conversion tax is gone.
 
 **The full 353-package index was not measured here, and the reason is worth
 recording.** The first attempt drove load average to 30 on a 4-core box and was
