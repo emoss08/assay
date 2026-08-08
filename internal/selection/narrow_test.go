@@ -193,6 +193,26 @@ func TestNarrowFallsBackOnNonGoFile(t *testing.T) {
 		"coverage tracks Go lines only")
 }
 
+func TestNarrowFallsBackOnTestFileChange(t *testing.T) {
+	h := newNarrowHarness(t)
+
+	// Line 6 is the body of TestAdd — executable, narrowable, and invisible to
+	// the index, which never contains _test.go files. Before test files were
+	// forced onto the blocking path this selected nothing at all, silently
+	// skipping the very test that was edited.
+	got := h.narrow(t, []vcs.Change{{
+		Path:      filepath.Join(h.root, "calc", "calc_test.go"),
+		Status:    "M",
+		Lines:     []vcs.LineRange{{Start: 6, End: 6}},
+		BaseLines: []vcs.LineRange{{Start: 6, End: 6}},
+	}})
+
+	plan := planFor(t, got, testfixture.Module+"/calc")
+	assert.NotEmpty(t, plan.FullReason,
+		"a test-body edit cannot be attributed by the index; the package must run in full")
+	assert.Contains(t, got.Blocked, filepath.Join(h.root, "calc", "calc_test.go"))
+}
+
 func TestNarrowSurvivesIndexFromAnotherCommit(t *testing.T) {
 	h := newNarrowHarness(t)
 	changes := []vcs.Change{h.calcChange(testfixture.CalcAddBodyLine)}

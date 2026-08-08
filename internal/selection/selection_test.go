@@ -98,6 +98,19 @@ func TestSelectFallsBackToAllOnModuleChange(t *testing.T) {
 	}
 }
 
+// TestSelectTreatsTestdataModuleFilesAsFixtures pins the trigger's scope: the
+// build never reads a go.mod under testdata, so editing one is a fixture
+// change for its owning package, not a workspace-wide module event.
+func TestSelectTreatsTestdataModuleFilesAsFixtures(t *testing.T) {
+	g, root := loadFixture(t)
+
+	res := selectFor(t, g, root, "svc/testdata/proj/go.mod")
+
+	assert.False(t, res.SelectAll, "a fixture go.mod must not force a full run")
+	assert.Equal(t, []string{mod + "/app", mod + "/svc"}, res.Packages,
+		"the fixture attributes to svc like any other testdata file")
+}
+
 func TestSelectFallsBackToAllOnUnattributedGoFile(t *testing.T) {
 	g, root := loadFixture(t)
 
