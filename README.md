@@ -53,7 +53,7 @@ See [BENCHMARKS.md](BENCHMARKS.md).
 **Go install** — one command, any platform:
 
 ```bash
-go install github.com/emoss08/assay/cmd/assay@latest
+go install github.com/emoss08/assay@latest
 ```
 
 The binary lands in `go env GOBIN` (default: `$(go env GOPATH)/bin`) under the
@@ -95,7 +95,7 @@ works.)
 ```bash
 git clone https://github.com/emoss08/assay
 cd assay
-go install ./cmd/assay
+go install .
 ```
 
 Prefer `go install` over `go build -o <path>`: a hand-written output path
@@ -109,7 +109,7 @@ applied at print time, and assay never interrogates the terminal with escape
 round-trips — but if you want the styling engine out of the binary entirely:
 
 ```bash
-go install -tags assay_plain ./cmd/assay
+go install -tags assay_plain .
 ```
 
 The plain build keeps the same colors, bars and alignment with stdlib-only
