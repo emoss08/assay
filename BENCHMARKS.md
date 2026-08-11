@@ -444,7 +444,7 @@ one per 50 ms, so callback frequency never affects collection throughput.
 ```bash
 go test -run '^$' -bench . ./internal/graph/ ./internal/cache/
 
-go build -o /tmp/assay ./cmd/assay
+go build -o /tmp/assay .
 /tmp/assay index --quiet
 /tmp/assay select -v          # after an edit
 /tmp/assay verify
